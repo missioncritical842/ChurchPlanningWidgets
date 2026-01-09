@@ -50,8 +50,32 @@
 <body>
   <div id="output"></div>
   <script>
-    // Helper: Parse a "YYYY-MM-DD" string into a Date using UTC.
+    // --- Configuration ---
+    const TABLE_PLAN = "Weekly_Church_Plan";
+    const TABLE_SONGS = "Songs";
+
+    // Column Constants
+    const COL_SUNDAY = "Sunday";
+    const COL_PSALM = "Psalm";
+    const COL_OT = "Old_Testament";
+    const COL_NT = "New_Testament";
+    const COL_GOSPEL = "Gospel";
+    const COL_SONG_1 = "Song_1";
+    const COL_SONG_2 = "Song_2";
+    const COL_SONG_3 = "Song_3";
+    const COL_SONG_4 = "Song_4";
+    const COL_SONG_5 = "Song_5";
+    const COL_SONG_6 = "Song_6";
+
+    // Songs Table Columns
+    const COL_SONG_NAME = "Song_Name";
+
+    // Helper: Parse a "YYYY-MM-DD" string or timestamp into a Date using UTC.
     function parseUTCDate(dateInput) {
+      if (!dateInput) return null;
+      if (typeof dateInput === "number") {
+        return new Date(dateInput * 1000);
+      }
       if (typeof dateInput === "string") {
         var parts = dateInput.split("-");
         // Create a Date in UTC (month is 0-indexed).
@@ -75,26 +99,48 @@
       var upcoming = new Date(today.getTime() + diff * 24 * 60 * 60 * 1000);
       return upcoming;
     }
+
+    // Helper to convert Grist column-oriented data
+    function convertToRecords(data) {
+      const columns = Object.keys(data);
+      if (columns.length === 0) return [];
+      if (Array.isArray(data)) return data;
+
+      const numRows = data.id ? data.id.length : 0;
+      const records = [];
+      for (let i = 0; i < numRows; i++) {
+        const record = { id: data.id[i] };
+        columns.forEach(col => {
+          if (col !== 'id') {
+             record[col] = data[col][i];
+          }
+        });
+        records.push(record);
+      }
+      return records;
+    }
     
     // Generate printable content for one record.
-    // This widget shows only the songs and scripture readings.
-    function generateContent(record) {
-      // Helper to extract song text.
-      function extractSong(songField) {
-        return songField && songField.Song_Name ? songField.Song_Name : songField || "";
+    function generateContent(record, songsMap) {
+      // Helper to extract song text using the Songs map
+      function extractSong(songId) {
+        if (!songId) return "";
+        const songRec = songsMap[songId];
+        return songRec ? (songRec[COL_SONG_NAME] || "") : "";
       }
-      var song1 = extractSong(record.Song_1);
-      var song2 = extractSong(record.Song_2);
-      var song3 = extractSong(record.Song_3);
-      var song4 = extractSong(record.Song_4);
-      var song5 = extractSong(record.Song_5);
-      var song6 = extractSong(record.Song_6);
+
+      var song1 = extractSong(record[COL_SONG_1]);
+      var song2 = extractSong(record[COL_SONG_2]);
+      var song3 = extractSong(record[COL_SONG_3]);
+      var song4 = extractSong(record[COL_SONG_4]);
+      var song5 = extractSong(record[COL_SONG_5]);
+      var song6 = extractSong(record[COL_SONG_6]);
       
       // Scripture readings.
-      var psalm = record.Psalm || "";
-      var ot = record.Old_Testament || "";
-      var nt = record.New_Testament || "";
-      var gospel = record.Gospel || "";
+      var psalm = record[COL_PSALM] || "";
+      var ot = record[COL_OT] || "";
+      var nt = record[COL_NT] || "";
+      var gospel = record[COL_GOSPEL] || "";
       
       var content = "";
       // First three songs.
@@ -119,52 +165,53 @@
       return content;
     }
     
-    // Render the content for the upcoming Sunday record.
-    function renderContent(record) {
-      // In this version, we remove the date from output.
-      document.getElementById("output").innerHTML = generateContent(record);
+    async function loadData() {
+      try {
+        const [planData, songsData] = await Promise.all([
+          grist.docApi.fetchTable(TABLE_PLAN),
+          grist.docApi.fetchTable(TABLE_SONGS)
+        ]);
+
+        const planRecords = convertToRecords(planData);
+        const songsRecords = convertToRecords(songsData);
+
+        // Index songs by ID
+        const songsMap = {};
+        songsRecords.forEach(s => {
+            songsMap[s.id] = s;
+        });
+
+        var upcoming = getUpcomingSundayUTC();
+        
+        // Filter for the record whose Sunday equals the upcoming Sunday (using UTC).
+        var filtered = planRecords.filter(function(rec) {
+          var recDate = parseUTCDate(rec[COL_SUNDAY]);
+          if (!recDate) return false;
+          // Compare dates (ignoring time component if any)
+          return recDate.getUTCFullYear() === upcoming.getUTCFullYear() &&
+                 recDate.getUTCMonth() === upcoming.getUTCMonth() &&
+                 recDate.getUTCDate() === upcoming.getUTCDate();
+        });
+
+        if (filtered.length === 0) {
+          document.getElementById("output").innerHTML = "No record for the upcoming Sunday (" + upcoming.toLocaleDateString() + ").";
+        } else {
+          // Use the first matching record.
+          document.getElementById("output").innerHTML = generateContent(filtered[0], songsMap);
+        }
+
+      } catch (err) {
+        console.error(err);
+        document.getElementById("output").innerHTML = "Error loading data: " + err.message;
+      }
     }
-    
+
     grist.ready({
-      columns: [
-        { name: "Sunday", title: "Sunday", type: "Date", optional: false },
-        { name: "Song_1", title: "Song 1", type: "Ref", optional: false },
-        { name: "Song_2", title: "Song 2", type: "Ref", optional: false },
-        { name: "Song_3", title: "Song 3", type: "Ref", optional: false },
-        { name: "Song_4", title: "Song 4", type: "Ref", optional: false },
-        { name: "Song_5", title: "Song 5", type: "Ref", optional: false },
-        { name: "Song_6", title: "Song 6", type: "Ref", optional: false },
-        { name: "Psalm", title: "Psalm", type: "Text", optional: false },
-        { name: "Old_Testament", title: "Old Testament", type: "Text", optional: false },
-        { name: "New_Testament", title: "New Testament", type: "Text", optional: false },
-        { name: "Gospel", title: "Gospel", type: "Text", optional: false }
-      ],
+      columns: [],
       requiredAccess: "read table"
     });
     
-    grist.onRecords(function(records, mappings) {
-      var mappedRecords = grist.mapColumnNames(records, mappings);
-      if (!mappedRecords) {
-        document.getElementById("output").innerHTML = "Error: Could not map columns properly.";
-        return;
-      }
-      if (!Array.isArray(mappedRecords)) {
-        mappedRecords = [mappedRecords];
-      }
-      
-      var upcoming = getUpcomingSundayUTC();
-      // Filter for the record whose Sunday equals the upcoming Sunday (using UTC).
-      var filtered = mappedRecords.filter(function(rec) {
-        var recDate = parseUTCDate(rec.Sunday);
-        return recDate.getTime() === upcoming.getTime();
-      });
-      if (filtered.length === 0) {
-        document.getElementById("output").innerHTML = "No record for the upcoming Sunday.";
-      } else {
-        // Use the first matching record.
-        renderContent(filtered[0]);
-      }
-    });
+    loadData();
   </script>
 </body>
 </html>
