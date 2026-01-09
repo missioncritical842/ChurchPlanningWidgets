@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Printable Service Details Widget</title>
+  <!-- External Grist API Script -->
+  <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+  <style>
+    /* Basic styling for a print-friendly view */
+    body {
+      font-family: sans-serif;
+      margin: 20px;
+      background-color: #fff;
+      color: #000;
+    }
+    h3, h4 {
+      margin: 10px 0;
+    }
+    ul {
+      list-style-type: disc;
+      margin-left: 20px;
+    }
+    p {
+      margin-top: 15px;
+    }
+    /* Optional: styles for printing */
+    @media print {
+      body {
+        margin: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="printable-output"></div>
+  <div id="warning-msg" style="color: red; font-size: 12px; display: none;"></div>
+  <script>
+    // Global state
+    var songsKeyMap = {};
+    var currentRecord = null;
+    // Fallback Doc ID from MarkdownEmail.html
+    var docId = "edUb9YnSZWnD";
+
+    // Helper: Parse a "YYYY-MM-DD" string into a Date using UTC.
+    function parseUTCDate(dateInput) {
+      if (typeof dateInput === "string") {
+        var parts = dateInput.split("-");
+        // Create a Date in UTC (month is 0-indexed).
+        return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+      }
+      // If already a Date, force it to UTC midnight.
+      return new Date(Date.UTC(dateInput.getUTCFullYear(), dateInput.getUTCMonth(), dateInput.getUTCDate()));
+    }
+
+    // Get today's date in UTC at midnight.
+    function getTodayUTC() {
+      var now = new Date();
+      return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    }
+
+    // Compute the upcoming Sunday in UTC.
+    function getUpcomingSundayUTC() {
+      var today = getTodayUTC();
+      var day = today.getUTCDay(); // 0 = Sunday, 1 = Monday, etc.
+      var diff = (7 - day) % 7;
+      var upcoming = new Date(today.getTime() + diff * 24 * 60 * 60 * 1000);
+      return upcoming;
+    }
+
+    // Helper to process a song record (from either API) and update map
+    function processSongRow(row) {
+       var sList = row.Song_List;
+       if (typeof sList === 'string') {
+          sList = sList.trim();
+          if (sList && row.Key) {
+             songsKeyMap[sList] = row.Key;
+          }
+       }
+       var sName = row.Song_Name;
+       if (typeof sName === 'string') {
+          sName = sName.trim();
+          if (sName && row.Key) {
+             songsKeyMap[sName] = row.Key;
+          }
+       }
+    }
+
+    function fetchSongsFromRestApi() {
+      var url = "https://docs.getgrist.com/api/docs/" + docId + "/tables/Songs/records";
+      fetch(url)
+        .then(function(response) {
+          if (!response.ok) throw new Error("REST API failed status: " + response.status);
+          return response.json();
+        })
+        .then(function(data) {
+           // REST API returns { records: [ { id, fields: {...} } ] }
+           if (data && data.records) {
+             data.records.forEach(function(rec) {
+               if (rec.fields) {
+                 processSongRow(rec.fields);
+               }
+             });
+             if (currentRecord) renderWidget();
+           }
+        })
+        .catch(function(e) {
+           console.error("REST API fallback also failed:", e);
+           var warn = document.getElementById('warning-msg');
+           warn.style.display = 'block';
+           warn.textContent = "Warning: Could not fetch Songs table via Widget API or REST API. Song keys will be missing. Check permissions or console.";
+        });
+    }
+
+    // Fetch Songs table to build a map of Song Name -> Key
+    function fetchReferenceData() {
+      grist.docApi.fetchTable("Songs").then(function(records) {
+        // Widget API returns array of flattened objects
+        records.forEach(processSongRow);
+        // Re-render if we already have a record
+        if (currentRecord) {
+          renderWidget();
+        }
+      }).catch(function(e) {
+        console.warn("Error fetching Songs table via Widget API, trying REST fallback:", e);
+        fetchSongsFromRestApi();
+      });
+    }
+
+    // Helper to extract a song's name and append Key if available.
+    function extractSong(songField) {
+      // The widget usually receives the display string for a Ref (e.g., "Come, Let Us.. (73)")
+      var name = "";
+      if (typeof songField === 'string') {
+        name = songField;
+      } else if (songField && songField.Song_Name) {
+        name = songField.Song_Name;
+      } else if (songField) {
+        name = String(songField);
+      }
+
+      if (!name) return "";
+
+      // Look up the key using the name (trimmed)
+      var key = songsKeyMap[name.trim()];
+      
+      // If found, insert it into the parentheses: "Title (Page)" -> "Title (Page, Key)"
+      if (key) {
+        var lastParenIndex = name.lastIndexOf(')');
+        if (lastParenIndex !== -1 && lastParenIndex === name.length - 1) {
+           return name.slice(0, lastParenIndex) + ", " + key + ")";
+        }
+      }
+      return name;
+    }
+
+    // Generate the printable HTML details for one service record.
+    function generatePrintableDetails(record) {
+      var psalm = record.Psalm || "";
+      var psalmReader = record.Psalm_Reader && record.Psalm_Reader.Name ? record.Psalm_Reader.Name : record.Psalm_Reader || "";
+      var oldTestament = record.Old_Testament || "";
+      var otReader = record.OT_Reader && record.OT_Reader.Name ? record.OT_Reader.Name : record.OT_Reader || "";
+      var newTestament = record.New_Testament || "";
+      var ntReader = record.NT_Reader && record.NT_Reader.Name ? record.NT_Reader.Name : record.NT_Reader || "";
+      var gospel = record.Gospel || "";
+      var gospelReader = record.Gospel_Reader && record.Gospel_Reader.Name ? record.Gospel_Reader.Name : record.Gospel_Reader || "";
+      var prayerLeader = record.Prayer_Leader && record.Prayer_Leader.Name ? record.Prayer_Leader.Name : record.Prayer_Leader || "";
+
+      var song1 = extractSong(record.Song_1);
+      var song2 = extractSong(record.Song_2);
+      var song3 = extractSong(record.Song_3);
+      var song4 = extractSong(record.Song_4);
+      var song5 = extractSong(record.Song_5);
+      var song6 = extractSong(record.Song_6);
+
+      var eucharist = record.Eucharist && record.Eucharist.Name ? record.Eucharist.Name : record.Eucharist || "";
+      var callToWorship = record.Call_to_Worship && record.Call_to_Worship.Name ? record.Call_to_Worship.Name : record.Call_to_Worship || "";
+      var homily = record.Homily && record.Homily.Name ? record.Homily.Name : record.Homily || "";
+
+      var html = "";
+      html += "<h3>Here are the details for Sunday's service:</h3>";
+
+      html += "<h4>Scripture Readings:</h4>";
+      html += "<ul>";
+      html += "<li>Psalm: " + psalm + " (" + psalmReader + ")</li>";
+      html += "<li>OT: " + oldTestament + " (" + otReader + ")</li>";
+      html += "<li>NT: " + newTestament + " (" + ntReader + ")</li>";
+      html += "<li>Gospel: " + gospel + " (" + gospelReader + ")</li>";
+      html += "<li>Prayers of the People: " + prayerLeader + "</li>";
+      html += "</ul>";
+
+      html += "<h4>Songs:</h4>";
+      html += "<ul>";
+      html += "<li>Song 1: " + song1 + "</li>";
+      html += "<li>Song 2: " + song2 + "</li>";
+      html += "<li>Song 3: " + song3 + "</li>";
+      html += "<li>Song 4: " + song4 + "</li>";
+      html += "<li>Song 5: " + song5 + "</li>";
+      html += "<li>Song 6: " + song6 + "</li>";
+      html += "</ul>";
+
+      // Footer mimicking MarkdownEmail: Call | Homily | Eucharist
+      html += "<p><small>Call: " + callToWorship + " | Homily: " + homily + " | Eucharist: " + eucharist + "</small></p>";
+      return html;
+    }
+
+    function renderWidget() {
+      if (!currentRecord) return;
+      var html = generatePrintableDetails(currentRecord);
+      document.getElementById("printable-output").innerHTML = html;
+    }
+
+    // Initialize widget column mappings.
+    grist.ready({
+      columns: [
+        { name: "Sunday", title: "Sunday", type: "Date", optional: false },
+        { name: "Psalm", title: "Psalm", type: "Text", optional: false },
+        { name: "Psalm_Reader", title: "Psalm Reader", type: "Ref", optional: false },
+        { name: "Old_Testament", title: "Old Testament", type: "Text", optional: false },
+        { name: "OT_Reader", title: "OT Reader", type: "Ref", optional: false },
+        { name: "New_Testament", title: "New Testament", type: "Text", optional: false },
+        { name: "NT_Reader", title: "NT Reader", type: "Ref", optional: false },
+        { name: "Gospel", title: "Gospel", type: "Text", optional: false },
+        { name: "Gospel_Reader", title: "Gospel Reader", type: "Ref", optional: false },
+        { name: "Prayer_Leader", title: "Prayer Leader", type: "Ref", optional: false },
+        { name: "Eucharist", title: "Eucharist", type: "Ref", optional: false },
+        { name: "Homily", title: "Homily", type: "Ref", optional: true },
+        { name: "Call_to_Worship", title: "Call to Worship", type: "Ref", optional: false },
+        { name: "Song_1", title: "Song 1", type: "Ref", optional: false },
+        { name: "Song_2", title: "Song 2", type: "Ref", optional: false },
+        { name: "Song_3", title: "Song 3", type: "Ref", optional: false },
+        { name: "Song_4", title: "Song 4", type: "Ref", optional: false },
+        { name: "Song_5", title: "Song 5", type: "Ref", optional: false },
+        { name: "Song_6", title: "Song 6", type: "Ref", optional: false }
+      ],
+      requiredAccess: "full"
+    });
+
+    grist.onRecords(function(records, mappings) {
+      var mappedRecords = grist.mapColumnNames(records, mappings);
+      if (!mappedRecords) {
+        document.getElementById("printable-output").innerHTML = "<p>Error: Could not map columns properly.</p>";
+        return;
+      }
+      if (!Array.isArray(mappedRecords)) {
+        mappedRecords = [mappedRecords];
+      }
+      
+      var upcoming = getUpcomingSundayUTC();
+      // Filter for the record whose Sunday equals the upcoming Sunday (using UTC).
+      var upcomingRecords = mappedRecords.filter(function(rec) {
+        var recDate = parseUTCDate(rec.Sunday);
+        return recDate.getTime() === upcoming.getTime();
+      });
+
+      if (upcomingRecords.length === 0) {
+        document.getElementById("printable-output").innerHTML = "<p>No upcoming Sunday service found.</p>";
+        currentRecord = null;
+      } else {
+        currentRecord = upcomingRecords[0];
+        renderWidget();
+      }
+    });
+
+    // Start fetching background data
+    fetchReferenceData();
+  </script>
+</body>
+</html>
