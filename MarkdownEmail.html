@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Weekly Email Generator Widget</title>
+  <!-- Include marked.js for markdown conversion -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    /* Basic styling for output */
+    body {
+      font-family: sans-serif;
+      margin: 10px;
+    }
+    #renderedOutput {
+      background-color: #f9f9f9;
+      padding: 10px;
+      border: 1px solid #ddd;
+      margin-top: 10px;
+    }
+    /* Styling for the copy button with a double border */
+    #copyEmail {
+      display: inline-block;
+      padding: 8px 12px;
+      margin-top: 10px;
+      border: 2px double #ccc;
+      background: #f9f9f9;
+      cursor: pointer;
+      font-size: 1em;
+    }
+    select {
+      font-size: 1em;
+      padding: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div id="email-widget">
+    <label for="dateSelect">Select a Sunday Date:</label>
+    <select id="dateSelect">
+      <option value="">-- Select a Sunday date --</option>
+    </select>
+    <br>
+    <button id="copyEmail">Copy Markdown Email</button>
+    <!-- This div will display the rendered HTML version of the markdown -->
+    <div id="renderedOutput"></div>
+  </div>
+  <script>
+    // Global variables for reference data
+    var hostsData = {};
+    var peopleData = {};
+    var songsData = {};
+    var eventsData = {};
+    var filteredRecords = [];  // Weekly_Church_Plan records (future dates)
+    var currentMarkdown = "";  // Stores the raw markdown text for the current email
+
+    // Your Grist document ID (replace if needed)
+    var docId = "edUb9YnSZWnD";
+
+    // Helper: load a table from the Grist API and return a dictionary mapping record id to its fields.
+    function loadTableData(docId, tableName) {
+      var url = "https://docs.getgrist.com/api/docs/" + docId + "/tables/" + encodeURIComponent(tableName) + "/records";
+      return fetch(url)
+        .then(function(response) {
+          if (!response.ok) {
+            throw new Error("Failed to load " + tableName + " (status: " + response.status + ")");
+          }
+          return response.json();
+        })
+        .then(function(data) {
+          var dict = {};
+          data.records.forEach(function(rec) {
+            dict[rec.id] = rec.fields;
+          });
+          return dict;
+        });
+    }
+
+    // Load all reference tables then load Weekly_Church_Plan.
+    function loadReferenceDataAndPlan() {
+      Promise.all([
+        loadTableData(docId, "Hosts"),
+        loadTableData(docId, "People"),
+        loadTableData(docId, "Songs"),
+        loadTableData(docId, "Events")
+      ]).then(function(results) {
+        hostsData = results[0];
+        peopleData = results[1];
+        songsData = results[2];
+        eventsData = results[3];
+        fetchWeeklyChurchPlanRecords();
+      }).catch(function(error) {
+        console.error("Error loading reference data:", error);
+        document.getElementById("renderedOutput").textContent = "Error loading reference data: " + error.message;
+      });
+    }
+
+    // Fetch Weekly_Church_Plan records.
+    function fetchWeeklyChurchPlanRecords() {
+      var tableName = "Weekly_Church_Plan";
+      var url = "https://docs.getgrist.com/api/docs/" + docId + "/tables/" + encodeURIComponent(tableName) + "/records";
+      fetch(url)
+        .then(function(response) {
+          if (!response.ok) { throw new Error("Failed to load Weekly_Church_Plan (status: " + response.status + ")"); }
+          return response.json();
+        })
+        .then(function(data) {
+          // Map each record to its fields and store its _id.
+          var mappedRecords = data.records.map(function(rec) {
+            rec.fields._id = rec.id;
+            return rec.fields;
+          });
+          var today = getTodayMidnight();
+          // Filter records where Sunday is in the future.
+          filteredRecords = mappedRecords.filter(function(rec) {
+            var recDate = getRecordDate(rec.Sunday);
+            return recDate.getTime() > today.getTime();
+          });
+          if (filteredRecords.length === 0) {
+            document.getElementById("renderedOutput").textContent = "No future emails scheduled.";
+          } else {
+            // Sort ascending by Sunday date.
+            filteredRecords.sort(function(a, b) {
+              return getRecordDate(a.Sunday) - getRecordDate(b.Sunday);
+            });
+            populateDropdown(filteredRecords);
+          }
+        })
+        .catch(function(error) {
+          console.error("Error fetching Weekly_Church_Plan:", error);
+          document.getElementById("renderedOutput").textContent = "Error fetching Weekly_Church_Plan: " + error.message;
+        });
+    }
+
+    // Compute today's date at midnight.
+    function getTodayMidnight() {
+      var now = new Date();
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    }
+
+    // Helper: Convert the Sunday field to a proper JavaScript Date.
+    function getRecordDate(rawValue) {
+      var d;
+      if (typeof rawValue === "number") {
+        d = rawValue < 1e10 ? new Date(rawValue * 1000) : new Date(rawValue);
+      } else {
+        d = new Date(rawValue);
+      }
+      return d;
+    }
+
+    // Format a date in long format ("January 1, 2025"), forcing UTC.
+    function formatLongDate(dateInput) {
+      var d = new Date(dateInput);
+      var options = { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' };
+      return d.toLocaleDateString('en-US', options);
+    }
+
+    // Reference lookup helpers.
+    function lookupHost(ref) {
+      if (ref && ref.Host_Name) return ref.Host_Name + " (" + ref.Address + ")";
+      return hostsData[ref] ? hostsData[ref].Host_Name + " (" + hostsData[ref].Address + ")" : "";
+    }
+    function lookupPerson(ref) {
+      if (ref && ref.Name) return ref.Name;
+      return peopleData[ref] ? peopleData[ref].Name : "";
+    }
+    // Use Song_List which might contain "Title (Page Number)". Add Key if available.
+    function lookupSong(ref) {
+      let songRecord;
+      // Determine if ref is a direct record object or an ID
+      if (ref && ref.Song_List !== undefined) {
+        songRecord = ref;
+      } else if (songsData[ref]) {
+        songRecord = songsData[ref];
+      } else {
+        return ""; // Cannot find song data
+      }
+
+      const songListValue = songRecord.Song_List || "";
+      const key = songRecord.Key || "";
+
+      // If no key is provided, return the original Song_List value
+      if (!key) {
+        return songListValue;
+      }
+
+      // Find the last closing parenthesis
+      const lastParenIndex = songListValue.lastIndexOf(')');
+
+      // Check if the parenthesis exists and is at the end of the string
+      if (lastParenIndex !== -1 && lastParenIndex === songListValue.length - 1) {
+        // Insert ", Key" before the closing parenthesis
+        return `${songListValue.slice(0, lastParenIndex)}, ${key})`;
+      } else {
+        // If the expected "(Page)" format isn't found at the end, return the original value.
+        // We could potentially append " (Key)" here, but sticking to the request to modify the existing parentheses.
+        return songListValue;
+      }
+    }
+    function lookupEvent(ref) {
+      if (ref && ref.Event_name_and_details) {
+        return ref.Date_to_List + " - " + ref.Event_name_and_details;
+      }
+      return eventsData[ref] ? eventsData[ref].Date_to_List + " - " + eventsData[ref].Event_name_and_details : "";
+    }
+
+    // Generate email markdown for one Weekly_Church_Plan record.
+    // (Note: The Sunday date is not shown at the top.)
+    function generateEmail(record) {
+      var host = lookupHost(record.Host);
+      var emailBody = record.Email_Body || "";
+      var signupParagraph = "If you are able to host in the upcoming weeks or months, please sign up [here](https://christtheanchor.com/church-hosting-sign-up/).";
+      
+      // Process Events field.
+      var events = record.Events;
+      var eventsMarkdown = "";
+      var eventsArray = [];
+      if (Array.isArray(events)) {
+        eventsArray = events
+          .filter(function(ev) { return ev != null; })
+          .map(function(ev) { return ev.toString().trim(); })
+          .filter(function(ev) { return ev.length > 0 && ev.toLowerCase() !== "null"; });
+      } else if (typeof events === "string" && events.trim() !== "") {
+        eventsArray = events.split(',')
+          .map(function(ev) { return ev.trim(); })
+          .filter(function(ev) { return ev.length > 0 && ev.toLowerCase() !== "null"; });
+      }
+      if (eventsArray.length > 0) {
+        eventsArray.forEach(function(ev) {
+          var eventText = lookupEvent(ev);
+          if (eventText.trim().length > 0) {
+            eventsMarkdown += "* " + eventText + "\n";
+          }
+        });
+      }
+      
+      var psalm = record.Psalm || "";
+      var oldTestament = record.Old_Testament || "";
+      var newTestament = record.New_Testament || "";
+      var gospel = record.Gospel || "";
+      
+      var psalmReader = lookupPerson(record.Psalm_Reader);
+      var otReader = lookupPerson(record.OT_Reader);
+      var ntReader = lookupPerson(record.NT_Reader);
+      var gospelReader = lookupPerson(record.Gospel_Reader);
+      var prayerLeader = lookupPerson(record.Prayer_Leader);
+      // New: Lookup Homily.
+      var homily = lookupPerson(record.Homily);
+      
+      var song1 = lookupSong(record.Song_1);
+      var song2 = lookupSong(record.Song_2);
+      var song3 = lookupSong(record.Song_3);
+      var song4 = lookupSong(record.Song_4);
+      var song5 = lookupSong(record.Song_5);
+      var song6 = lookupSong(record.Song_6);
+      
+      var eucharist = lookupPerson(record.Eucharist);
+      var callToWorship = lookupPerson(record.Call_to_Worship);
+      
+      var md = "";
+      // Add two trailing spaces after the Service Location line.
+      md += "**Service Location: " + host + "**  \n";
+      md += "**Time: 10:00am**\n\n";
+      md += "Dear Church,\n\n";
+      md += emailBody + "\n\n";
+      
+      var summaryIntro = record.Summary_intro_for_email || "";
+      var podcastSummary = record.Podcast_Summary_not_appended_ || "";
+      var podcastText = "Listen to the podcast on [Spotify](https://open.spotify.com/show/63FGeB7Bziv8LlN06hJ5Yx) or [Apple Podcasts](https://podcasts.apple.com/us/podcast/the-anchor-drop/id1746957311).";
+      var combinedParagraph = (summaryIntro + " " + podcastSummary + " " + podcastText).trim();
+      md += combinedParagraph + "\n\n";
+      
+      md += signupParagraph + "\n\n";
+      md += "##### Upcoming Events\n\n";
+      md += eventsMarkdown + "\n";
+      md += "#### Here are the details for Sunday's service:\n";
+      md += "##### Scripture Readings:\n";
+      md += "* Psalm: " + psalm + " (" + psalmReader + ")\n";
+      md += "* OT: " + oldTestament + " (" + otReader + ")\n";
+      md += "* NT: " + newTestament + " (" + ntReader + ")\n";
+      md += "* Gospel: " + gospel + " (" + gospelReader + ")\n";
+      md += "* Prayers of the People: " + prayerLeader + "\n\n";
+      md += "##### Songs:\n";
+      md += "* Song 1: " + song1 + "\n";
+      md += "* Song 2: " + song2 + "\n";
+      md += "* Song 3: " + song3 + "\n";
+      md += "* Song 4: " + song4 + "\n";
+      md += "* Song 5: " + song5 + "\n";
+      md += "* Song 6: " + song6 + "\n\n";
+      md += "Looking forward to worshiping with you all on Sunday!\n\n";
+      md += "Blessings,\n";
+      md += "Joe Anderson";
+      md += "\n\n";
+      // Rearranged: Call first, then Homily, then Eucharist.
+      md += "<small><small>Call: " + callToWorship + " | Homily: " + homily + " | Eucharist: " + eucharist + "</small></small>";
+      return md;
+    }
+
+    // Render a single email.
+    // It converts the raw markdown into HTML using marked.parse() and injects it into the renderedOutput div.
+    function renderEmail(record) {
+      currentMarkdown = generateEmail(record);
+      document.getElementById("renderedOutput").innerHTML = marked.parse(currentMarkdown);
+    }
+
+    // Populate the dropdown with future Sunday dates and default to the next upcoming date.
+    function populateDropdown(records) {
+      var dateSelect = document.getElementById("dateSelect");
+      dateSelect.innerHTML = "";
+      var defaultOption = document.createElement("option");
+      defaultOption.value = "";
+      defaultOption.textContent = "-- Select a Sunday date --";
+      dateSelect.appendChild(defaultOption);
+      
+      records.forEach(function(rec) {
+        var option = document.createElement("option");
+        option.value = rec._id;
+        var date = getRecordDate(rec.Sunday);
+        option.textContent = formatLongDate(date);
+        dateSelect.appendChild(option);
+      });
+      
+      // Default to the first (earliest) upcoming date.
+      if (records.length > 0) {
+        dateSelect.value = records[0]._id;
+        renderEmail(records[0]);
+      }
+      
+      dateSelect.addEventListener("change", function() {
+        var selectedId = this.value;
+        if (selectedId === "") {
+          document.getElementById("renderedOutput").innerHTML = "";
+          return;
+        }
+        var rec = records.find(function(r) { return r._id == selectedId; });
+        if (rec) {
+          renderEmail(rec);
+        } else {
+          document.getElementById("renderedOutput").innerHTML = "No email for that date.";
+        }
+      });
+    }
+
+    // Copy the raw markdown text to clipboard using document.execCommand('copy').
+    document.getElementById("copyEmail").addEventListener("click", function() {
+      if (currentMarkdown.trim() === "") return;
+      var tempTextArea = document.createElement("textarea");
+      tempTextArea.value = currentMarkdown;
+      tempTextArea.style.position = "fixed";
+      tempTextArea.style.top = "0";
+      tempTextArea.style.left = "0";
+      tempTextArea.style.opacity = "0";
+      document.body.appendChild(tempTextArea);
+      tempTextArea.select();
+      try {
+        var successful = document.execCommand("copy");
+        if (successful) {
+          alert("Markdown email copied to clipboard!");
+        } else {
+          alert("Failed to copy markdown email.");
+        }
+      } catch (err) {
+        alert("Failed to copy markdown email: " + err);
+      }
+      document.body.removeChild(tempTextArea);
+    });
+
+    // When DOM content is loaded, load reference data and then Weekly_Church_Plan records.
+    document.addEventListener("DOMContentLoaded", loadReferenceDataAndPlan);
+  </script>
+</body>
+</html>
