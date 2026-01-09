@@ -2,58 +2,93 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Printable Service Sheet Widget (Upcoming Sunday v1.1)</title>
+  <title>Printable Service Sheet Widget (Upcoming Sunday v1.2)</title>
   <!-- External Grist API Script -->
   <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
   <style>
-    /* Set up the page for two 11x17 sheets in landscape */
-    @page {
-      size: 17in 11in;
-      margin: 0.5in;
-    }
-    /* Base styles for printing */
+    /* Reset and Base Styles */
     body {
-      font-family: Arial, sans-serif;
-      font-size: 48px;
       margin: 0;
-      padding: 20px;
-      line-height: 1.3; /* Increased spacing between lines */
+      padding: 0;
+      background-color: #525659; /* Dark grey background like a PDF viewer */
+      font-family: Arial, sans-serif;
     }
-    /* Intro text: Calibri Bold, 72px, with fixed width to align dynamic text */
+
+    /* The Page Container */
+    .page {
+      width: 17in;
+      height: 11in;
+      margin: 0.5in auto; /* Center on screen with spacing */
+      padding: 0.5in;     /* Internal padding for content */
+      background-color: white;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5); /* Drop shadow */
+      box-sizing: border-box; /* Include padding in width/height */
+      position: relative;
+      overflow: hidden; /* Prevent spillover */
+      
+      /* Typography setup */
+      font-size: 48px;
+      line-height: 1.3;
+    }
+
+    /* Styles inside the page */
     .label {
       display: inline-block;
-      width: 300px; /* Adjust this width if needed */
+      width: 300px;
       font-family: Calibri, sans-serif;
       font-weight: bold;
       font-size: 72px;
+      vertical-align: top;
     }
-    /* Scripture Readings heading: full width, underlined, 72px */
+    
     .scripture-heading {
       font-family: Calibri, sans-serif;
       font-weight: bold;
       font-size: 72px;
       text-decoration: underline;
-      margin-bottom: 10px;
+      margin-bottom: 20px;
+      margin-top: 20px;
     }
-    /* The dynamic content (song names and scripture readings): Arial Narrow Bold, 112px */
+    
     .bigText {
       font-size: 112px;
       font-family: "Arial Narrow", sans-serif;
       font-weight: bold;
     }
-    /* Ensure our output container handles line breaks */
-    #output {
-      white-space: pre-wrap;
+
+    .song-row {
+      margin-bottom: 10px;
+    }
+
+    /* Print Specific Styles */
+    @media print {
+      body {
+        background-color: white;
+        margin: 0;
+      }
+      .page {
+        margin: 0;
+        box-shadow: none;
+        page-break-after: always;
+        width: 17in;
+        height: 11in;
+      }
+      /* Ensure the last page doesn't produce a blank extra sheet */
+      .page:last-child {
+        page-break-after: auto;
+      }
     }
   </style>
 </head>
 <body>
+
   <div id="output">Loading...</div>
+
   <script>
     // --- Configuration ---
     const TABLE_PLAN = "Weekly_Church_Plan";
     const TABLE_SONGS = "Songs";
-    const DOC_ID = "edUb9YnSZWnD"; // Required for standalone mode
+    const DOC_ID = "edUb9YnSZWnD";
 
     // Column Constants
     const COL_SUNDAY = "Sunday";
@@ -68,7 +103,6 @@
     const COL_SONG_5 = "Song_5";
     const COL_SONG_6 = "Song_6";
 
-    // Songs Table Columns
     const COL_SONG_NAME = "Song_Name";
 
     // Helper: Parse a "YYYY-MM-DD" string or timestamp into a Date using UTC.
@@ -79,10 +113,8 @@
       }
       if (typeof dateInput === "string") {
         var parts = dateInput.split("-");
-        // Create a Date in UTC (month is 0-indexed).
         return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
       }
-      // If already a Date, force it to UTC midnight.
       return new Date(Date.UTC(dateInput.getUTCFullYear(), dateInput.getUTCMonth(), dateInput.getUTCDate()));
     }
     
@@ -95,7 +127,7 @@
     // Compute the upcoming Sunday in UTC.
     function getUpcomingSundayUTC() {
       var today = getTodayUTC();
-      var day = today.getUTCDay(); // 0 = Sunday, 1 = Monday, etc.
+      var day = today.getUTCDay(); 
       var diff = (7 - day) % 7;
       var upcoming = new Date(today.getTime() + diff * 24 * 60 * 60 * 1000);
       return upcoming;
@@ -123,12 +155,9 @@
     
     // Generate printable content for one record.
     function generateContent(record, songsMap) {
-      // Helper to extract song text using the Songs map
       function extractSong(songId) {
         if (!songId) return "";
-        // If songId is the object itself (from REST API sometimes)
         if (typeof songId === 'object' && songId.id) songId = songId.id;
-        
         const songRec = songsMap[songId];
         return songRec ? (songRec[COL_SONG_NAME] || "") : "";
       }
@@ -140,54 +169,55 @@
       var song5 = extractSong(record[COL_SONG_5]);
       var song6 = extractSong(record[COL_SONG_6]);
       
-      // Scripture readings.
       var psalm = record[COL_PSALM] || "";
       var ot = record[COL_OT] || "";
       var nt = record[COL_NT] || "";
       var gospel = record[COL_GOSPEL] || "";
       
-      var content = "";
-      // First three songs.
-      content += "<span class='label'>Song 1:</span><span class='bigText'>" + song1 + "</span><br>";
-      content += "<span class='label'>Song 2:</span><span class='bigText'>" + song2 + "</span><br>";
-      content += "<span class='label'>Song 3:</span><span class='bigText'>" + song3 + "</span><br><br>";
+      // PAGE 1: Songs 1-3, Psalm, OT
+      var page1 = `
+        <div class="page">
+          <div class="song-row"><span class="label">Song 1:</span><span class="bigText">${song1}</span></div>
+          <div class="song-row"><span class="label">Song 2:</span><span class="bigText">${song2}</span></div>
+          <div class="song-row"><span class="label">Song 3:</span><span class="bigText">${song3}</span></div>
+          
+          <div class="scripture-heading">Scripture Readings</div>
+          
+          <div class="song-row"><span class="label">Psalm:</span><span class="bigText">${psalm}</span></div>
+          <div class="song-row"><span class="label">OT:</span><span class="bigText">${ot}</span></div>
+        </div>
+      `;
+
+      // PAGE 2: NT, Gospel, Songs 4-6
+      var page2 = `
+        <div class="page">
+          <div class="song-row"><span class="label">NT:</span><span class="bigText">${nt}</span></div>
+          <div class="song-row"><span class="label">Gospel:</span><span class="bigText">${gospel}</span></div>
+          
+          <br><br> <!-- Spacer to visually separate, similar to original flow -->
+          
+          <div class="song-row"><span class="label">Song 4:</span><span class="bigText">${song4}</span></div>
+          <div class="song-row"><span class="label">Song 5:</span><span class="bigText">${song5}</span></div>
+          <div class="song-row"><span class="label">Song 6:</span><span class="bigText">${song6}</span></div>
+        </div>
+      `;
       
-      // Scripture Readings heading (full width).
-      content += "<div class='scripture-heading'>Scripture Readings</div>";
-      content += "<span class='label'>Psalm:</span><span class='bigText'>" + psalm + "</span><br>";
-      content += "<span class='label'>OT:</span><span class='bigText'>" + ot + "</span><br>";
-      // Forced page break after OT reading.
-      content += "<div style='page-break-after: always;'></div>";
-      content += "<span class='label'>NT:</span><span class='bigText'>" + nt + "</span><br>";
-      content += "<span class='label'>Gospel:</span><span class='bigText'>" + gospel + "</span><br><br>";
-      
-      // Last three songs.
-      content += "<span class='label'>Song 4:</span><span class='bigText'>" + song4 + "</span><br>";
-      content += "<span class='label'>Song 5:</span><span class='bigText'>" + song5 + "</span><br>";
-      content += "<span class='label'>Song 6:</span><span class='bigText'>" + song6 + "</span><br>";
-      
-      return content;
+      return page1 + page2;
     }
 
-    // Helper: fetch table using REST API (standalone mode)
     async function fetchTableRest(tableName) {
       const url = `https://docs.getgrist.com/api/docs/${DOC_ID}/tables/${tableName}/records`;
       const response = await fetch(url);
       if (!response.ok) throw new Error(`Failed to fetch ${tableName}: ${response.status}`);
       const json = await response.json();
-      // Map records to flatten structure: { id: 1, ...fields }
       return json.records.map(r => ({ id: r.id, ...r.fields }));
     }
     
     async function loadData() {
       try {
         let planRecords, songsRecords;
-
-        // Try Grist Widget API first
         try {
-          // Check if we are inside Grist iframe
           if (window.parent === window) throw new Error("Standalone");
-          
           const [planData, songsData] = await Promise.all([
             grist.docApi.fetchTable(TABLE_PLAN),
             grist.docApi.fetchTable(TABLE_SONGS)
@@ -202,34 +232,27 @@
           ]);
         }
 
-        // Index songs by ID
         const songsMap = {};
-        songsRecords.forEach(s => {
-            songsMap[s.id] = s;
-        });
+        songsRecords.forEach(s => { songsMap[s.id] = s; });
 
         var upcoming = getUpcomingSundayUTC();
-        
-        // Filter for the record whose Sunday equals the upcoming Sunday (using UTC).
         var filtered = planRecords.filter(function(rec) {
           var recDate = parseUTCDate(rec[COL_SUNDAY]);
           if (!recDate) return false;
-          // Compare dates (ignoring time component if any)
           return recDate.getUTCFullYear() === upcoming.getUTCFullYear() &&
                  recDate.getUTCMonth() === upcoming.getUTCMonth() &&
                  recDate.getUTCDate() === upcoming.getUTCDate();
         });
 
         if (filtered.length === 0) {
-          document.getElementById("output").innerHTML = "No record for the upcoming Sunday (" + upcoming.toLocaleDateString() + ").";
+          document.getElementById("output").innerHTML = "<div class='page' style='padding: 2in; text-align:center;'>No record for upcoming Sunday (" + upcoming.toLocaleDateString() + ").</div>";
         } else {
-          // Use the first matching record.
           document.getElementById("output").innerHTML = generateContent(filtered[0], songsMap);
         }
 
       } catch (err) {
         console.error(err);
-        document.getElementById("output").innerHTML = "Error loading data: " + err.message + "<br><br>Make sure the document ID is correct and public access is enabled.";
+        document.getElementById("output").innerHTML = "<div class='page' style='color:red; padding: 2in;'>" + err.message + "</div>";
       }
     }
 
