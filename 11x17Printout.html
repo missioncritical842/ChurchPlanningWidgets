@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Printable Service Sheet Widget (Upcoming Sunday)</title>
+  <!-- External Grist API Script -->
+  <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+  <style>
+    /* Set up the page for two 11x17 sheets in landscape */
+    @page {
+      size: 17in 11in;
+      margin: 0.5in;
+    }
+    /* Base styles for printing */
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 48px;
+      margin: 0;
+      padding: 20px;
+      line-height: 1.3; /* Increased spacing between lines */
+    }
+    /* Intro text: Calibri Bold, 72px, with fixed width to align dynamic text */
+    .label {
+      display: inline-block;
+      width: 300px; /* Adjust this width if needed */
+      font-family: Calibri, sans-serif;
+      font-weight: bold;
+      font-size: 72px;
+    }
+    /* Scripture Readings heading: full width, underlined, 72px */
+    .scripture-heading {
+      font-family: Calibri, sans-serif;
+      font-weight: bold;
+      font-size: 72px;
+      text-decoration: underline;
+      margin-bottom: 10px;
+    }
+    /* The dynamic content (song names and scripture readings): Arial Narrow Bold, 112px */
+    .bigText {
+      font-size: 112px;
+      font-family: "Arial Narrow", sans-serif;
+      font-weight: bold;
+    }
+    /* Ensure our output container handles line breaks */
+    #output {
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <div id="output"></div>
+  <script>
+    // Helper: Parse a "YYYY-MM-DD" string into a Date using UTC.
+    function parseUTCDate(dateInput) {
+      if (typeof dateInput === "string") {
+        var parts = dateInput.split("-");
+        // Create a Date in UTC (month is 0-indexed).
+        return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+      }
+      // If already a Date, force it to UTC midnight.
+      return new Date(Date.UTC(dateInput.getUTCFullYear(), dateInput.getUTCMonth(), dateInput.getUTCDate()));
+    }
+    
+    // Get today's date in UTC at midnight.
+    function getTodayUTC() {
+      var now = new Date();
+      return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    }
+    
+    // Compute the upcoming Sunday in UTC.
+    function getUpcomingSundayUTC() {
+      var today = getTodayUTC();
+      var day = today.getUTCDay(); // 0 = Sunday, 1 = Monday, etc.
+      var diff = (7 - day) % 7;
+      var upcoming = new Date(today.getTime() + diff * 24 * 60 * 60 * 1000);
+      return upcoming;
+    }
+    
+    // Generate printable content for one record.
+    // This widget shows only the songs and scripture readings.
+    function generateContent(record) {
+      // Helper to extract song text.
+      function extractSong(songField) {
+        return songField && songField.Song_Name ? songField.Song_Name : songField || "";
+      }
+      var song1 = extractSong(record.Song_1);
+      var song2 = extractSong(record.Song_2);
+      var song3 = extractSong(record.Song_3);
+      var song4 = extractSong(record.Song_4);
+      var song5 = extractSong(record.Song_5);
+      var song6 = extractSong(record.Song_6);
+      
+      // Scripture readings.
+      var psalm = record.Psalm || "";
+      var ot = record.Old_Testament || "";
+      var nt = record.New_Testament || "";
+      var gospel = record.Gospel || "";
+      
+      var content = "";
+      // First three songs.
+      content += "<span class='label'>Song 1:</span><span class='bigText'>" + song1 + "</span><br>";
+      content += "<span class='label'>Song 2:</span><span class='bigText'>" + song2 + "</span><br>";
+      content += "<span class='label'>Song 3:</span><span class='bigText'>" + song3 + "</span><br><br>";
+      
+      // Scripture Readings heading (full width).
+      content += "<div class='scripture-heading'>Scripture Readings</div>";
+      content += "<span class='label'>Psalm:</span><span class='bigText'>" + psalm + "</span><br>";
+      content += "<span class='label'>OT:</span><span class='bigText'>" + ot + "</span><br>";
+      // Forced page break after OT reading.
+      content += "<div style='page-break-after: always;'></div>";
+      content += "<span class='label'>NT:</span><span class='bigText'>" + nt + "</span><br>";
+      content += "<span class='label'>Gospel:</span><span class='bigText'>" + gospel + "</span><br><br>";
+      
+      // Last three songs.
+      content += "<span class='label'>Song 4:</span><span class='bigText'>" + song4 + "</span><br>";
+      content += "<span class='label'>Song 5:</span><span class='bigText'>" + song5 + "</span><br>";
+      content += "<span class='label'>Song 6:</span><span class='bigText'>" + song6 + "</span><br>";
+      
+      return content;
+    }
+    
+    // Render the content for the upcoming Sunday record.
+    function renderContent(record) {
+      // In this version, we remove the date from output.
+      document.getElementById("output").innerHTML = generateContent(record);
+    }
+    
+    grist.ready({
+      columns: [
+        { name: "Sunday", title: "Sunday", type: "Date", optional: false },
+        { name: "Song_1", title: "Song 1", type: "Ref", optional: false },
+        { name: "Song_2", title: "Song 2", type: "Ref", optional: false },
+        { name: "Song_3", title: "Song 3", type: "Ref", optional: false },
+        { name: "Song_4", title: "Song 4", type: "Ref", optional: false },
+        { name: "Song_5", title: "Song 5", type: "Ref", optional: false },
+        { name: "Song_6", title: "Song 6", type: "Ref", optional: false },
+        { name: "Psalm", title: "Psalm", type: "Text", optional: false },
+        { name: "Old_Testament", title: "Old Testament", type: "Text", optional: false },
+        { name: "New_Testament", title: "New Testament", type: "Text", optional: false },
+        { name: "Gospel", title: "Gospel", type: "Text", optional: false }
+      ],
+      requiredAccess: "read table"
+    });
+    
+    grist.onRecords(function(records, mappings) {
+      var mappedRecords = grist.mapColumnNames(records, mappings);
+      if (!mappedRecords) {
+        document.getElementById("output").innerHTML = "Error: Could not map columns properly.";
+        return;
+      }
+      if (!Array.isArray(mappedRecords)) {
+        mappedRecords = [mappedRecords];
+      }
+      
+      var upcoming = getUpcomingSundayUTC();
+      // Filter for the record whose Sunday equals the upcoming Sunday (using UTC).
+      var filtered = mappedRecords.filter(function(rec) {
+        var recDate = parseUTCDate(rec.Sunday);
+        return recDate.getTime() === upcoming.getTime();
+      });
+      if (filtered.length === 0) {
+        document.getElementById("output").innerHTML = "No record for the upcoming Sunday.";
+      } else {
+        // Use the first matching record.
+        renderContent(filtered[0]);
+      }
+    });
+  </script>
+</body>
+</html>
