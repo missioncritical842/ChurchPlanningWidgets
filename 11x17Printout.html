@@ -48,11 +48,12 @@
   </style>
 </head>
 <body>
-  <div id="output"></div>
+  <div id="output">Loading...</div>
   <script>
     // --- Configuration ---
     const TABLE_PLAN = "Weekly_Church_Plan";
     const TABLE_SONGS = "Songs";
+    const DOC_ID = "edUb9YnSZWnD"; // Required for standalone mode
 
     // Column Constants
     const COL_SUNDAY = "Sunday";
@@ -125,6 +126,9 @@
       // Helper to extract song text using the Songs map
       function extractSong(songId) {
         if (!songId) return "";
+        // If songId is the object itself (from REST API sometimes)
+        if (typeof songId === 'object' && songId.id) songId = songId.id;
+        
         const songRec = songsMap[songId];
         return songRec ? (songRec[COL_SONG_NAME] || "") : "";
       }
@@ -164,16 +168,39 @@
       
       return content;
     }
+
+    // Helper: fetch table using REST API (standalone mode)
+    async function fetchTableRest(tableName) {
+      const url = `https://docs.getgrist.com/api/docs/${DOC_ID}/tables/${tableName}/records`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Failed to fetch ${tableName}: ${response.status}`);
+      const json = await response.json();
+      // Map records to flatten structure: { id: 1, ...fields }
+      return json.records.map(r => ({ id: r.id, ...r.fields }));
+    }
     
     async function loadData() {
       try {
-        const [planData, songsData] = await Promise.all([
-          grist.docApi.fetchTable(TABLE_PLAN),
-          grist.docApi.fetchTable(TABLE_SONGS)
-        ]);
+        let planRecords, songsRecords;
 
-        const planRecords = convertToRecords(planData);
-        const songsRecords = convertToRecords(songsData);
+        // Try Grist Widget API first
+        try {
+          // Check if we are inside Grist iframe
+          if (window.parent === window) throw new Error("Standalone");
+          
+          const [planData, songsData] = await Promise.all([
+            grist.docApi.fetchTable(TABLE_PLAN),
+            grist.docApi.fetchTable(TABLE_SONGS)
+          ]);
+          planRecords = convertToRecords(planData);
+          songsRecords = convertToRecords(songsData);
+        } catch (e) {
+          console.log("Widget API failed or standalone mode, trying REST API...");
+          [planRecords, songsRecords] = await Promise.all([
+            fetchTableRest(TABLE_PLAN),
+            fetchTableRest(TABLE_SONGS)
+          ]);
+        }
 
         // Index songs by ID
         const songsMap = {};
@@ -202,7 +229,7 @@
 
       } catch (err) {
         console.error(err);
-        document.getElementById("output").innerHTML = "Error loading data: " + err.message;
+        document.getElementById("output").innerHTML = "Error loading data: " + err.message + "<br><br>Make sure the document ID is correct and public access is enabled.";
       }
     }
 
