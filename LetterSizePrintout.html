@@ -2,38 +2,84 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Printable Service Details Widget (v1.1)</title>
+  <title>Printable Service Details Widget (v1.2)</title>
   <!-- External Grist API Script -->
   <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
   <style>
-    /* Basic styling for a print-friendly view */
+    /* Reset and Base Styles */
     body {
+      margin: 0;
+      padding: 0;
+      background-color: #525659; /* Dark grey background like a PDF viewer */
       font-family: sans-serif;
-      margin: 20px;
-      background-color: #fff;
       color: #000;
     }
-    h3, h4 {
-      margin: 10px 0;
+
+    /* The Page Container */
+    .page {
+      width: 8.5in;
+      min-height: 11in; /* Allow it to grow if content overflows slightly, though fixed is better for strict print preview */
+      margin: 0.5in auto; /* Center on screen with spacing */
+      padding: 0.75in;    /* Internal padding for content */
+      background-color: white;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5); /* Drop shadow */
+      box-sizing: border-box; /* Include padding in width */
+      position: relative;
+    }
+
+    /* Typography */
+    h3 {
+      margin-top: 0;
+      font-size: 24px;
+      border-bottom: 2px solid #eee;
+      padding-bottom: 10px;
+    }
+    h4 {
+      margin-top: 20px;
+      margin-bottom: 10px;
+      font-size: 18px;
+      color: #333;
     }
     ul {
       list-style-type: disc;
       margin-left: 20px;
+      margin-top: 0;
+      line-height: 1.5;
+    }
+    li {
+      margin-bottom: 5px;
     }
     p {
-      margin-top: 15px;
+      margin-top: 30px;
+      padding-top: 10px;
+      border-top: 1px solid #eee;
     }
-    /* Optional: styles for printing */
+
+    /* Print Specific Styles */
     @media print {
       body {
+        background-color: white;
         margin: 0;
+      }
+      .page {
+        margin: 0;
+        box-shadow: none;
+        width: 8.5in;
+        height: 11in;
+        padding: 0.5in; /* Slightly reduce padding for print margin safety */
+        page-break-after: always;
       }
     }
   </style>
 </head>
 <body>
-  <div id="printable-output">Loading...</div>
-  <div id="warning-msg" style="color: red; font-size: 12px; display: none;"></div>
+
+  <div id="output">
+    <div class="page" style="display: flex; align-items: center; justify-content: center;">
+      Loading...
+    </div>
+  </div>
+
   <script>
     // --- Configuration ---
     const TABLE_PLAN = "Weekly_Church_Plan";
@@ -188,30 +234,32 @@
       var callToWorship = getPersonName(record[COL_CALL_TO_WORSHIP]);
       var homily = getPersonName(record[COL_HOMILY]);
 
-      var html = "";
-      html += "<h3>Here are the details for Sunday's service (" + getUpcomingSundayUTC().toLocaleDateString() + "):</h3>";
+      var html = `
+        <div class="page">
+          <h3>Sunday Service Details: ${getUpcomingSundayUTC().toLocaleDateString()}</h3>
 
-      html += "<h4>Scripture Readings:</h4>";
-      html += "<ul>";
-      html += "<li>Psalm: " + psalm + " (" + psalmReader + ")</li>";
-      html += "<li>OT: " + oldTestament + " (" + otReader + ")</li>";
-      html += "<li>NT: " + newTestament + " (" + ntReader + ")</li>";
-      html += "<li>Gospel: " + gospel + " (" + gospelReader + ")</li>";
-      html += "<li>Prayers of the People: " + prayerLeader + "</li>";
-      html += "</ul>";
+          <h4>Scripture Readings:</h4>
+          <ul>
+            <li><strong>Psalm:</strong> ${psalm} <em>(${psalmReader})</em></li>
+            <li><strong>OT:</strong> ${oldTestament} <em>(${otReader})</em></li>
+            <li><strong>NT:</strong> ${newTestament} <em>(${ntReader})</em></li>
+            <li><strong>Gospel:</strong> ${gospel} <em>(${gospelReader})</em></li>
+            <li><strong>Prayers of the People:</strong> ${prayerLeader}</li>
+          </ul>
 
-      html += "<h4>Songs:</h4>";
-      html += "<ul>";
-      html += "<li>Song 1: " + song1 + "</li>";
-      html += "<li>Song 2: " + song2 + "</li>";
-      html += "<li>Song 3: " + song3 + "</li>";
-      html += "<li>Song 4: " + song4 + "</li>";
-      html += "<li>Song 5: " + song5 + "</li>";
-      html += "<li>Song 6: " + song6 + "</li>";
-      html += "</ul>";
+          <h4>Songs:</h4>
+          <ul>
+            <li><strong>Song 1:</strong> ${song1}</li>
+            <li><strong>Song 2:</strong> ${song2}</li>
+            <li><strong>Song 3:</strong> ${song3}</li>
+            <li><strong>Song 4:</strong> ${song4}</li>
+            <li><strong>Song 5:</strong> ${song5}</li>
+            <li><strong>Song 6:</strong> ${song6}</li>
+          </ul>
 
-      // Footer
-      html += "<p><small>Call: " + callToWorship + " | Homily: " + homily + " | Eucharist: " + eucharist + "</small></p>";
+          <p><small><strong>Call:</strong> ${callToWorship} | <strong>Homily:</strong> ${homily} | <strong>Eucharist:</strong> ${eucharist}</small></p>
+        </div>
+      `;
       return html;
     }
 
@@ -260,15 +308,15 @@
         });
 
         if (filtered.length === 0) {
-          document.getElementById("printable-output").innerHTML = "<p>No record found for upcoming Sunday (" + upcoming.toLocaleDateString() + ").</p>";
+          document.getElementById("output").innerHTML = `<div class="page" style="text-align:center; padding-top: 2in;">No record found for upcoming Sunday (${upcoming.toLocaleDateString()}).</div>`;
         } else {
           var html = generatePrintableDetails(filtered[0], songsMap, peopleMap);
-          document.getElementById("printable-output").innerHTML = html;
+          document.getElementById("output").innerHTML = html;
         }
 
       } catch (err) {
         console.error(err);
-        document.getElementById("printable-output").innerHTML = "Error loading data: " + err.message;
+        document.getElementById("output").innerHTML = `<div class="page" style="color:red; text-align:center; padding-top: 2in;">Error loading data: ${err.message}</div>`;
       }
     }
 
