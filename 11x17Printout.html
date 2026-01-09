@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Printable Service Sheet Widget (Upcoming Sunday v1.3)</title>
+  <title>Printable Service Sheet Widget (Upcoming Sunday v1.4)</title>
   <!-- External Grist API Script -->
   <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
   <style>
@@ -71,7 +71,8 @@
         box-shadow: none;
         page-break-after: always;
         width: 17in;
-        height: 11in;
+        height: 100%; /* Use 100% to fit the print area naturally */
+        overflow: visible; /* Allow content to print normally */
       }
       /* Ensure the last page doesn't produce a blank extra sheet */
       .page:last-child {
@@ -175,32 +176,29 @@
       var gospel = record[COL_GOSPEL] || "";
       
       // PAGE 1: Songs 1-3, Psalm, OT
-      var page1 = `
-        <div class="page">
-          <div class="song-row"><span class="label">Song 1:</span><span class="bigText">${song1}</span></div>
-          <div class="song-row"><span class="label">Song 2:</span><span class="bigText">${song2}</span></div>
-          <div class="song-row"><span class="label">Song 3:</span><span class="bigText">${song3}</span></div>
+      // Note: No extra whitespace between divs to prevent layout gaps
+      var page1 = '<div class="page">' +
+          '<div class="song-row"><span class="label">Song 1:</span><span class="bigText">' + song1 + '</span></div>' +
+          '<div class="song-row"><span class="label">Song 2:</span><span class="bigText">' + song2 + '</span></div>' +
+          '<div class="song-row"><span class="label">Song 3:</span><span class="bigText">' + song3 + '</span></div>' +
           
-          <div class="scripture-heading">Scripture Readings</div>
+          '<div class="scripture-heading">Scripture Readings</div>' +
           
-          <div class="song-row"><span class="label">Psalm:</span><span class="bigText">${psalm}</span></div>
-          <div class="song-row"><span class="label">OT:</span><span class="bigText">${ot}</span></div>
-        </div>
-      `;
+          '<div class="song-row"><span class="label">Psalm:</span><span class="bigText">' + psalm + '</span></div>' +
+          '<div class="song-row"><span class="label">OT:</span><span class="bigText">' + ot + '</span></div>' +
+        '</div>';
 
       // PAGE 2: NT, Gospel, Songs 4-6
-      var page2 = `
-        <div class="page">
-          <div class="song-row"><span class="label">NT:</span><span class="bigText">${nt}</span></div>
-          <div class="song-row"><span class="label">Gospel:</span><span class="bigText">${gospel}</span></div>
+      var page2 = '<div class="page">' +
+          '<div class="song-row"><span class="label">NT:</span><span class="bigText">' + nt + '</span></div>' +
+          '<div class="song-row"><span class="label">Gospel:</span><span class="bigText">' + gospel + '</span></div>' +
           
-          <br><br> <!-- Spacer to visually separate, similar to original flow -->
+          '<br><br>' +
           
-          <div class="song-row"><span class="label">Song 4:</span><span class="bigText">${song4}</span></div>
-          <div class="song-row"><span class="label">Song 5:</span><span class="bigText">${song5}</span></div>
-          <div class="song-row"><span class="label">Song 6:</span><span class="bigText">${song6}</span></div>
-        </div>
-      `;
+          '<div class="song-row"><span class="label">Song 4:</span><span class="bigText">' + song4 + '</span></div>' +
+          '<div class="song-row"><span class="label">Song 5:</span><span class="bigText">' + song5 + '</span></div>' +
+          '<div class="song-row"><span class="label">Song 6:</span><span class="bigText">' + song6 + '</span></div>' +
+        '</div>';
       
       return page1 + page2;
     }
