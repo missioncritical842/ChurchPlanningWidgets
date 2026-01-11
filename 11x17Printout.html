@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Printable Service Sheet Widget (Upcoming Sunday v1.5)</title>
+  <title>Printable Service Sheet Widget (Upcoming Sunday v1.6)</title>
   <!-- External Grist API Script -->
   <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
   <style>
@@ -60,6 +60,15 @@
       display: flex;
       align-items: center;
     }
+    
+    .reader-name {
+      font-size: 18px;
+      font-family: Arial, sans-serif;
+      color: #666;
+      margin-left: 15px;
+      font-weight: normal;
+      vertical-align: middle;
+    }
 
     /* Print Specific Styles */
     @media print {
@@ -90,14 +99,19 @@
     // --- Configuration ---
     const TABLE_PLAN = "Weekly_Church_Plan";
     const TABLE_SONGS = "Songs";
+    const TABLE_PEOPLE = "People";
     const DOC_ID = "edUb9YnSZWnD";
 
     // Column Constants
     const COL_SUNDAY = "Sunday";
     const COL_PSALM = "Psalm";
+    const COL_PSALM_READER = "Psalm_Reader";
     const COL_OT = "Old_Testament";
+    const COL_OT_READER = "OT_Reader";
     const COL_NT = "New_Testament";
+    const COL_NT_READER = "NT_Reader";
     const COL_GOSPEL = "Gospel";
+    const COL_GOSPEL_READER = "Gospel_Reader";
     const COL_SONG_1 = "Song_1";
     const COL_SONG_2 = "Song_2";
     const COL_SONG_3 = "Song_3";
@@ -106,6 +120,7 @@
     const COL_SONG_6 = "Song_6";
 
     const COL_SONG_NAME = "Song_List";
+    const COL_PERSON_NAME = "Name";
 
     // Helper: Parse a "YYYY-MM-DD" string or timestamp into a Date using UTC.
     function parseUTCDate(dateInput) {
@@ -156,12 +171,19 @@
     }
     
     // Generate printable content for one record.
-    function generateContent(record, songsMap) {
+    function generateContent(record, songsMap, peopleMap) {
       function extractSong(songId) {
         if (!songId) return "";
         if (typeof songId === 'object' && songId.id) songId = songId.id;
         const songRec = songsMap[songId];
         return songRec ? (songRec[COL_SONG_NAME] || "") : "";
+      }
+      
+      function extractPerson(personId) {
+        if (!personId) return "";
+        if (typeof personId === 'object' && personId.id) personId = personId.id;
+        const personRec = peopleMap[personId];
+        return personRec ? (personRec[COL_PERSON_NAME] || "") : "";
       }
 
       var song1 = extractSong(record[COL_SONG_1]);
@@ -172,9 +194,19 @@
       var song6 = extractSong(record[COL_SONG_6]);
       
       var psalm = record[COL_PSALM] || "";
+      var psalmReader = extractPerson(record[COL_PSALM_READER]);
       var ot = record[COL_OT] || "";
+      var otReader = extractPerson(record[COL_OT_READER]);
       var nt = record[COL_NT] || "";
+      var ntReader = extractPerson(record[COL_NT_READER]);
       var gospel = record[COL_GOSPEL] || "";
+      var gospelReader = extractPerson(record[COL_GOSPEL_READER]);
+      
+      // Helper to generate scripture row with optional reader name
+      function scriptureRow(label, text, reader) {
+        var readerHtml = reader ? '<span class="reader-name">' + reader + '</span>' : '';
+        return '<div class="song-row"><span class="label">' + label + ':' + readerHtml + '</span><span class="bigText">' + text + '</span></div>';
+      }
       
       // PAGE 1: Songs 1-3, Psalm, OT
       // Note: No extra whitespace between divs to prevent layout gaps
@@ -185,14 +217,14 @@
           
           '<div class="scripture-heading">Scripture Readings</div>' +
           
-          '<div class="song-row"><span class="label">Psalm:</span><span class="bigText">' + psalm + '</span></div>' +
-          '<div class="song-row"><span class="label">OT:</span><span class="bigText">' + ot + '</span></div>' +
+          scriptureRow('Psalm', psalm, psalmReader) +
+          scriptureRow('OT', ot, otReader) +
         '</div>';
 
       // PAGE 2: NT, Gospel, Songs 4-6
       var page2 = '<div class="page">' +
-          '<div class="song-row"><span class="label">NT:</span><span class="bigText">' + nt + '</span></div>' +
-          '<div class="song-row"><span class="label">Gospel:</span><span class="bigText">' + gospel + '</span></div>' +
+          scriptureRow('NT', nt, ntReader) +
+          scriptureRow('Gospel', gospel, gospelReader) +
           
           '<br><br>' +
           
@@ -214,25 +246,31 @@
     
     async function loadData() {
       try {
-        let planRecords, songsRecords;
+        let planRecords, songsRecords, peopleRecords;
         try {
           if (window.parent === window) throw new Error("Standalone");
-          const [planData, songsData] = await Promise.all([
+          const [planData, songsData, peopleData] = await Promise.all([
             grist.docApi.fetchTable(TABLE_PLAN),
-            grist.docApi.fetchTable(TABLE_SONGS)
+            grist.docApi.fetchTable(TABLE_SONGS),
+            grist.docApi.fetchTable(TABLE_PEOPLE)
           ]);
           planRecords = convertToRecords(planData);
           songsRecords = convertToRecords(songsData);
+          peopleRecords = convertToRecords(peopleData);
         } catch (e) {
           console.log("Widget API failed or standalone mode, trying REST API...");
-          [planRecords, songsRecords] = await Promise.all([
+          [planRecords, songsRecords, peopleRecords] = await Promise.all([
             fetchTableRest(TABLE_PLAN),
-            fetchTableRest(TABLE_SONGS)
+            fetchTableRest(TABLE_SONGS),
+            fetchTableRest(TABLE_PEOPLE)
           ]);
         }
 
         const songsMap = {};
         songsRecords.forEach(s => { songsMap[s.id] = s; });
+        
+        const peopleMap = {};
+        peopleRecords.forEach(p => { peopleMap[p.id] = p; });
 
         var upcoming = getUpcomingSundayUTC();
         var filtered = planRecords.filter(function(rec) {
@@ -246,7 +284,7 @@
         if (filtered.length === 0) {
           document.getElementById("output").innerHTML = "<div class='page' style='padding: 2in; text-align:center;'>No record for upcoming Sunday (" + upcoming.toLocaleDateString() + ").</div>";
         } else {
-          document.getElementById("output").innerHTML = generateContent(filtered[0], songsMap);
+          document.getElementById("output").innerHTML = generateContent(filtered[0], songsMap, peopleMap);
         }
 
       } catch (err) {
