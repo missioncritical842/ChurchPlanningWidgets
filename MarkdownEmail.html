@@ -271,8 +271,10 @@
       md += combinedParagraph + "\n\n";
       
       md += signupParagraph + "\n\n";
-      md += "##### Upcoming Events\n\n";
-      md += eventsMarkdown + "\n";
+      if (eventsMarkdown.trim().length > 0) {
+        md += "##### Upcoming Events\n\n";
+        md += eventsMarkdown + "\n";
+      }
       md += "#### Here are the details for Sunday's service:\n";
       md += "##### Scripture Readings:\n";
       md += "* Psalm: " + psalm + " (" + psalmReader + ")\n";
